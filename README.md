@@ -15,6 +15,8 @@ ecg-net/
 ├── proposed_model.py             # Proposed v1: dual-branch (lead-attn-static + CNN+Transformer)
 ├── proposed_model_v2.py          # Proposed v2: per-lead CNN + spatial lead attention + temporal transformer
 ├── proposed_model_v3.py          # Proposed v3: multi-scale CNN + single transformer
+├── proposed_model_v4.py          # Proposed v4: multi-scale per-lead CNN + spatial lead attention + temporal transformer
+├── device.py                     # CUDA / Apple MPS / CPU device selection
 └── ptb-xl/                       # PTB-XL dataset (download separately from PhysioNet)
 ```
 
@@ -54,6 +56,7 @@ python baseline_resnet.py             # ~10 minutes
 python proposed_model.py              # v1 (~5 minutes)
 python proposed_model_v2.py           # v2 (~5 minutes)
 python proposed_model_v3.py           # v3 (~5 minutes)
+python proposed_model_v4.py           # v4 (~5 minutes; supports Apple MPS)
 ```
 
 ---
@@ -293,6 +296,14 @@ Input: (B, 12, 1000)
 
 ---
 
+### Proposed v4 — Multi-scale Per-lead CNN + Spatial Lead Attention
+
+Extends v2 by replacing the single-scale per-lead grouped CNN with a multi-scale frontend (kernels 5/15/31). Keeps v2's spatial lead attention and temporal Transformer. Adds `device.py` for CUDA / Apple MPS / CPU.
+
+**Result:** Macro F1 0.7370, Macro AUROC 0.9173 on test (Mac MPS training run).
+
+---
+
 ## Results
 
 PTB-XL diagnostic superclass classification. Multi-label, 5 classes. Macro-averaged metrics on the held-out test set (PTB-XL fold 10). Per-class thresholds tuned on validation set (fold 9).
@@ -306,6 +317,7 @@ PTB-XL diagnostic superclass classification. Multi-label, 5 classes. Macro-avera
 | Proposed v1 | 2.5M | 0.7255 | 0.9129 | 0.9383 | 0.8957 | 0.9263 | 0.9024 | 0.9019 |
 | **Proposed v2** | 1.5M | **0.7444** | 0.9233 | 0.9461 | 0.9201 | 0.9359 | **0.9215** | 0.8929 |
 | Proposed v3 | 800k | 0.7173 | 0.9095 | 0.9354 | 0.8886 | 0.9252 | 0.9055 | 0.8926 |
+| Proposed v4 | 1.15M | 0.7370 | 0.9173 | 0.9378 | 0.9070 | 0.9342 | 0.9070 | 0.9007 |
 
 **Bold** = best per column.
 
