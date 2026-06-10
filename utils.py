@@ -49,7 +49,7 @@ def load_metadata(data_dir):
 
 # Step 2 — Load raw WFDB signals
 def load_signals(df, data_dir, sampling_rate):
-    print("[2/5] Loading raw WFDB signals (this takes a few minutes)...")
+    print("[2/5] Loading raw WFDB signals...")
     filenames = df.filename_lr if sampling_rate == 100 else df.filename_hr
     signals = []
     for f in tqdm(filenames, desc="WFDB"):
@@ -59,7 +59,6 @@ def load_signals(df, data_dir, sampling_rate):
 
 # Step 3 — Bandpass filter
 def bandpass_filter(signals, low, high, fs, order):
-    """Zero-phase Butterworth bandpass filter. (N, 12, T) -> (N, 12, T)."""
     print(f"[3/5] Bandpass filtering {low}-{high} Hz...")
     sos = butter(order, [low, high], btype="bandpass", fs=fs, output="sos")
     out = np.empty_like(signals)
@@ -67,9 +66,8 @@ def bandpass_filter(signals, low, high, fs, order):
         out[i] = sosfiltfilt(sos, signals[i], axis=-1).astype(np.float32)
     return out
 
-# Step 4 — Train/val/test split using PTB-XL recommended folds
+# Step 4 — Train/val/test split using PTB-XL recommended folds - 1-8 train, 9 val, 10 test
 def split_data(X, y, df):
-    """PTB-XL recommended split: folds 1-8 train, 9 val, 10 test."""
     print("[4/5] Splitting train/val/test...")
     train_mask = (df.strat_fold <= 8).values
     val_mask   = (df.strat_fold == 9).values
@@ -85,7 +83,7 @@ def split_data(X, y, df):
     return splits
 
 
-# Step 5 — Per-lead z-score normalization using TRAIN statistics
+# Step 5 — Per-lead z-score normalization using train statistics
 def normalize(splits):
     """Compute mean/std from training data only, then apply to all splits."""
     print("[5/5] Per-lead z-score normalization (using train stats)...")
@@ -150,10 +148,9 @@ def load_preprocessed(out_dir=OUT_DIR, with_df=False):
     """
     Load preprocessed splits. Use this in every deep-model training script.
 
-    Returns
-    -------
-    with_df=False : X_train, y_train, X_val, y_val, X_test, y_test
-    with_df=True  : the above + (df_train, df_val, df_test)
+    Returns:
+    - with_df=False : X_train, y_train, X_val, y_val, X_test, y_test
+    - with_df=True : the above + (df_train, df_val, df_test)
     """
     splits = {}
     for name in ["train", "val", "test"]:
@@ -174,23 +171,13 @@ def load_preprocessed(out_dir=OUT_DIR, with_df=False):
             splits["test"][0],  splits["test"][1])
 
 
-# hand crafted feature for the XGBoost baseline
-# Features are computed on bandpass-filtered but unnormalized signals so that
-# amplitude-based clinical features (R-wave amplitude, ST level, Sokolow-Lyon,
-# Cornell) retain their absolute mV meaning.
+# hand crafted feature on bandpass-filtered unnormalized signal for the XGBoost baseline
 def _import_neurokit():
-    """Lazy import so neurokit2 is only required for the XGBoost feature path."""
     import neurokit2 as nk
     return nk
 
-
 def _load_unnormalized_signals():
-    """Load PTB-XL signals with bandpass filter applied but NO normalization.
-
-    Reuses the same metadata/signal/filter/split helpers as the deep-model
-    pipeline so the two paths stay in sync; only normalization is skipped
-    (amplitude features need absolute mV values).
-    """
+    """Load bandpass-filtered unnormalized signal."""
     df = load_metadata(DATA_DIR)
     signals = load_signals(df, DATA_DIR, FS)
 
@@ -217,7 +204,6 @@ def stat_features(lead_signal):
         "rms":  float(np.sqrt(np.mean(lead_signal ** 2))),
         "ptp":  float(np.ptp(lead_signal)),   # peak-to-peak amplitude
     }
-
 
 def spectral_features(lead_signal, fs=FS):
     """Band-power ratios in 4 physiologically motivated bands."""
@@ -348,7 +334,7 @@ def extract_features_batch(X, nk, name=""):
 
 
 def extract_features():
-    """Extract hand-crafted features for the XGBoost baseline -> .parquet."""
+    """Extract hand-crafted features for the XGBoost baseline to .parquet."""
     print("=" * 60)
     print("Hand-crafted Feature Extraction (XGBoost, unnormalized signals)")
     print("=" * 60)
@@ -388,7 +374,7 @@ class PTBXLDataset(Dataset):
     """
     Wraps the preprocessed (N, 12, 1000) signal arrays and (N, 5) label arrays.
 
-    When augment=True (training only) applies label-preserving augmentation:
+    When augment=True applies label-preserving augmentation for training data only:
       - small additive Gaussian noise (p=0.5)
       - random circular time shift within +/-50 samples (p=0.5)
       - lead dropout: zero out one random lead (p=0.2)
@@ -554,10 +540,7 @@ def evaluate(model, loader, criterion, thresholds=None, device=DEVICE):
 # Threshold tuning 
 ##################
 def tune_thresholds_from_probs(probs, targets, num_classes=len(SUPERCLASSES)):
-    """Per-class F1-maximizing thresholds from probability/target arrays.
-
-    Used by the XGBoost baseline, which produces probabilities directly and has
-    no torch model/loader.
+    """Per-class F1-maximizing thresholds from probability/target arrays for XGBoost baseline.
     """
     thresholds = np.full(num_classes, 0.5)
     candidates = np.linspace(0.05, 0.95, 91)

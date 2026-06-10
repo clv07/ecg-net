@@ -1,5 +1,10 @@
+import os
+import json
+import numpy as np
 import torch
 import torch.nn as nn
+
+from utils import DEVICE, SUPERCLASSES, model_summary, train_one_epoch, evaluate, tune_thresholds, make_cosine, make_warmup_cosine, save_test_artifacts, print_metrics
 
 class PerLeadCNN(nn.Module):
     """
@@ -152,3 +157,111 @@ class CnnTransformer(nn.Module):
 
         h = h.mean(dim=1)
         return self.classifier(h)
+
+
+#######################################
+# Training
+#######################################
+def train_proposed(model, cfg, loaders, title="CNN + Transformer"):
+    """
+    Train the proposed CNN + Transformer model with early stopping on F1 validation
+    metric, then evaluate the best checkpoint on the test
+    set with both the default 0.5 threshold and tuned per-class thresholds.
+    """
+    train_loader, val_loader, test_loader = loaders
+    os.makedirs(cfg["checkpoint_dir"], exist_ok=True)
+    best_mdl = os.path.join(cfg["checkpoint_dir"], "best.pt")
+    last_mdl = os.path.join(cfg["checkpoint_dir"], "last.pt")
+    history_path = os.path.join(cfg["checkpoint_dir"], "history.json")
+
+    select_metric = cfg.get("select_metric", "f1")
+
+    model = model.to(DEVICE)
+    model_summary(model, name=title)
+
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg["weight_decay"])
+    if cfg.get("warmup_epochs"):
+        scheduler = make_warmup_cosine(optimizer, cfg["warmup_epochs"], cfg["epochs"])
+    else:
+        scheduler = make_cosine(optimizer, cfg["epochs"])
+
+    history = {k: [] for k in ("train_loss", "train_f1", "val_loss", "val_f1",
+                               "val_precision", "val_recall", "val_auroc", "lr")}
+    best_score, patience = 0.0, 0
+
+    print(f"\nStarting training — {title}")
+    for epoch in range(cfg["epochs"]):
+        train_loss, train_f1 = train_one_epoch(
+            model, train_loader, criterion, optimizer, grad_clip=cfg["grad_clip"])
+        val_metrics, _, _ = evaluate(model, val_loader, criterion)
+        lr_now = scheduler.get_last_lr()[0]
+        scheduler.step()
+
+        history["train_loss"].append(train_loss)
+        history["train_f1"].append(train_f1)
+        history["val_loss"].append(val_metrics["loss"])
+        history["val_f1"].append(val_metrics["f1"])
+        history["val_precision"].append(val_metrics["precision"])
+        history["val_recall"].append(val_metrics["recall"])
+        history["val_auroc"].append(val_metrics["auroc"])
+        history["lr"].append(lr_now)
+
+        print(f"\nEpoch {epoch + 1:02d}/{cfg['epochs']}  (lr={lr_now:.2e})")
+        print(f"  Train  Loss={train_loss:.4f}  F1={train_f1:.4f}")
+        print(f"  Val    Loss={val_metrics['loss']:.4f}  F1={val_metrics['f1']:.4f}  "
+              f"Prec={val_metrics['precision']:.4f}  Recall={val_metrics['recall']:.4f}  "
+              f"AUROC={val_metrics['auroc']:.4f}")
+        print("  Val per-class AUROC: " + "  ".join(
+            f"{cls}={v:.3f}" for cls, v in val_metrics["per_class_auroc"].items()))
+
+        # save the latest checkpoint
+        torch.save({"epoch": epoch, "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "val_f1": val_metrics["f1"], "val_auroc": val_metrics["auroc"]},
+                   last_mdl)
+
+        score = val_metrics[select_metric]
+        if score > best_score:
+            best_score, patience = score, 0
+            torch.save({"epoch": epoch, "model_state_dict": model.state_dict(),
+                        f"val_{select_metric}": best_score}, best_mdl)
+            print(f"   checkpoint: best model saved "
+                  f"(val {select_metric}: {best_score:.4f})")
+        else:
+            patience += 1
+            print(f"  Patience {patience}/{cfg['patience']}")
+            if patience >= cfg["patience"]:
+                print(f"\nEarly stopping at epoch {epoch + 1}")
+                break
+
+        with open(history_path, "w") as f:
+            json.dump(history, f, indent=2)
+
+    # load the best checkpoint
+    print("\nLoading best model for evaluation...")
+    ckpt = torch.load(best_mdl, map_location=DEVICE)
+    model.load_state_dict(ckpt["model_state_dict"])
+
+    # tune per-class thresholds on the validation set
+    print("\nTuning per-class thresholds on validation set...")
+    thresholds = tune_thresholds(model, val_loader, len(SUPERCLASSES))
+    for cls, t in zip(SUPERCLASSES, thresholds):
+        print(f"    {cls:5s}: {t:.3f}")
+    np.save(os.path.join(cfg["checkpoint_dir"], "thresholds.npy"), thresholds)
+
+    # test with the 0.5 threshold
+    print("\nTest with threshold 0.5:")
+    test_default, _, _ = evaluate(model, test_loader, criterion, thresholds=None)
+    print(f"  Macro F1={test_default['f1']:.4f}  "
+          f"Prec={test_default['precision']:.4f}  "
+          f"Recall={test_default['recall']:.4f}")
+
+    # test with tuned per-class thresholds
+    print("\nTest with tuned per-class thresholds:")
+    test_metrics, test_preds, test_targs = evaluate(
+        model, test_loader, criterion, thresholds=thresholds)
+    print_metrics(test_metrics, title=f"FINAL TEST RESULTS — {title}")
+    save_test_artifacts(cfg["checkpoint_dir"], test_metrics, test_preds, test_targs)
+    print(f"\nArtifacts saved to {cfg['checkpoint_dir']}/")
+    return test_metrics

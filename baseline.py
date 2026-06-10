@@ -31,7 +31,7 @@ XGB_PARAMS = {
 }
 
 def run_xgboost():
-    checkpoint_dir = "./checkpoint_xgb"
+    checkpoint_dir = "../checkpoint_xgb"
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     print("=" * 60)
