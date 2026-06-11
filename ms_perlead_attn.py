@@ -8,6 +8,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
+from utils import preprocess_signals
 
 SUPERCLASSES = ["NORM", "MI", "STTC", "CD", "HYP"]
 PREPROCESSED_DIR = "./preprocessed"
@@ -340,6 +341,8 @@ def evaluate(model, loader, criterion, device, thresholds=None):
 def main():
     device = get_device()
     print(f"Device: {device}")
+
+    preprocess_signals()
 
     X_train, y_train, X_val, y_val, X_test, y_test = load_preprocessed()
     print(f"  Train: {X_train.shape}  Val: {X_val.shape}  Test: {X_test.shape}")
