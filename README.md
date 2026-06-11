@@ -15,7 +15,7 @@ pip install torch wfdb scipy scikit-learn xgboost neurokit2 tqdm pandas pyarrow 
 - Run the cells in `baseline-and-cnn-transformer.ipynb` from top to bottom. The notebook handles data loading, training, checkpoint selection, threshold tuning, and evaluation.
 
 ### Multi-Scale Per-Lead Attention Model
-- Run `python preprocess.py` once (if `./preprocessed/` is not already available), then run `python MS_Per-Lead_Attn.py` end-to-end. The script handles data loading, training, checkpoint selection, threshold tuning, and evaluation automatically (CUDA, Apple MPS, or CPU via `device.py`).
+- Run `python ms_perlead_attn.py` end-to-end. The script handles data loading, training, checkpoint selection, threshold tuning, and evaluation automatically (CUDA, Apple MPS, or CPU via `device.py`).
 
 ### ECGInceptionSENet
 - Run ptbxl_ecg_classification.ipynb end-to-end on Google Colab (T4 GPU recommended). The notebook handles data loading, preprocessing, training, evaluation, and figure generation.
