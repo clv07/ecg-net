@@ -25,3 +25,9 @@ pip install torch wfdb scipy scikit-learn xgboost neurokit2 tqdm pandas pyarrow 
 - The architecture extends the per-lead CNN and spatial lead attention framework with a multi-scale grouped convolution frontend (kernel sizes 5, 15, and 31), followed by cross-lead self-attention at each time step and a temporal Transformer for long-range sequence modeling.
 - On the held-out test fold, the model achieves Macro AUROC 0.917, Macro Precision 0.701, and an optimised Macro F1 of 0.737 after per-class threshold tuning.
 - To reproduce results, run `python preprocess.py` once (if `./preprocessed/` is not already available), then run `python MS_Per-Lead_Attn.py` end-to-end; the script handles data loading, training, checkpoint selection, threshold tuning, and evaluation automatically (CUDA, Apple MPS, or CPU via `device.py`).
+
+### L5G-Net
+- L5G-Net is a multi-label ECG classifier trained on the PTB-XL dataset to detect five cardiac diagnostic superclasses (NORM, MI, STTC, CD, HYP) from standard 12-lead recordings.
+- L5G-Net introduce medical perspective into the machine learning, combine lead into groups, also modify CNN model to accommodate with the group training.
+- On the held-out test fold, the model achieves Macro AUROC 0.940, Precision 0.8743, and an Macro F1 of 0.753.
+- To reproduce results, run `L5GNet_reproduction.ipynb` cell by cell, the script handles data loading, training, and evaluation automatically.
